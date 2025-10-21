@@ -1,6 +1,6 @@
-use anyhow::{Context, Result};
-use std::process::Command;
 use crate::utils;
+use anyhow::{bail, Context, Result};
+use std::process::Command;
 
 pub fn execute(name: &str) -> Result<()> {
     let root_dir = utils::get_root_dir()?;
@@ -12,11 +12,25 @@ pub fn execute(name: &str) -> Result<()> {
 
     eprintln!("Creating worktree at: {}", worktree_path.display());
 
-    // Create the worktree
-    let output = Command::new("git")
-        .args(["worktree", "add", worktree_path.to_str().unwrap(), name])
+    // Check if the branch exists
+    let branch_exists = Command::new("git")
+        .args(["show-ref", "--verify", &format!("refs/heads/{}", name)])
         .output()
-        .context("Failed to execute git worktree add")?;
+        .context("Failed to check if branch exists")?
+        .status
+        .success();
+
+    if branch_exists {
+        bail!("Branch already exists.");
+    }
+
+    // Create the worktree
+    let mut cmd = Command::new("git");
+    cmd.arg("worktree").arg("add");
+
+    cmd.arg(worktree_path.to_str().unwrap());
+
+    let output = cmd.output().context("Failed to execute git worktree add")?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
