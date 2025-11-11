@@ -4,38 +4,49 @@ A CLI tool for managing git worktrees with ease.
 
 ## Installation
 
-Build the tool:
+### Automated Installation (Recommended)
+
+Run the installation script:
+
+```bash
+./install.sh
+```
+
+This will:
+1. Build the project with `cargo`
+2. Install the binary to `~/.local/bin/worktree`
+3. Add a `wt` wrapper function to your shell configuration (`.bashrc`, `.zshrc`, or `.config/fish/config.fish`)
+4. Update your PATH if needed
+
+After installation, restart your shell or run:
+```bash
+source ~/.bashrc  # or ~/.zshrc for zsh
+```
+
+### Manual Installation
+
+If you prefer to install manually:
+
+1. Build the tool:
 ```bash
 cargo build --release
 ```
 
-The binary will be available at `target/release/worktree`.
-
-## Configuration
-
-Set the `WORKTREE_ROOT_DIR` environment variable to specify where worktrees should be created:
-
+2. Copy the binary to your PATH:
 ```bash
-export WORKTREE_ROOT_DIR="$HOME/worktrees"
+cp target/release/worktree ~/.local/bin/
 ```
 
-Add this to your shell configuration file (`.bashrc`, `.zshrc`, etc.) to make it permanent.
+3. Add the shell wrapper function to your shell configuration:
 
-## Shell Integration
-
-Since a child process cannot change the parent shell's directory, you need to use a shell wrapper function. Add this to your shell configuration:
-
-### For Bash/Zsh:
-
+**For Bash/Zsh** (add to `~/.bashrc` or `~/.zshrc`):
 ```bash
 wt() {
     local output
     output=$(worktree "$@")
     local exit_code=$?
 
-    # Check if the output contains a cd command
     if echo "$output" | grep -q "^cd "; then
-        # Extract and execute the cd command
         eval "$output"
     else
         echo "$output"
@@ -45,8 +56,7 @@ wt() {
 }
 ```
 
-### For Fish:
-
+**For Fish** (add to `~/.config/fish/config.fish`):
 ```fish
 function wt
     set output (worktree $argv)
@@ -61,6 +71,26 @@ function wt
     return $exit_code
 end
 ```
+
+### Uninstallation
+
+To remove the tool:
+
+```bash
+./uninstall.sh
+```
+
+This will remove the binary and clean up your shell configuration.
+
+## Configuration
+
+Set the `WORKTREE_ROOT_DIR` environment variable to specify where worktrees should be created:
+
+```bash
+export WORKTREE_ROOT_DIR="$HOME/worktrees"
+```
+
+Add this to your shell configuration file (`.bashrc`, `.zshrc`, etc.) to make it permanent.
 
 ## Usage
 
