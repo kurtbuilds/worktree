@@ -28,7 +28,8 @@ fi
 echo "📦 Building the project..."
 cargo build --release
 
-if [ ! -f "target/release/${BINARY_NAME}" ]; then
+BINARY_PATH="${CARGO_TARGET_DIR:-target}/release/${BINARY_NAME}"
+if [ ! -f "$BINARY_PATH" ]; then
     echo -e "${RED}Error: Build failed. Binary not found at target/release/${BINARY_NAME}${NC}"
     exit 1
 fi
@@ -39,7 +40,7 @@ mkdir -p "${INSTALL_DIR}"
 
 # Copy binary to installation directory
 echo "📋 Installing binary to ${INSTALL_DIR}/${BINARY_NAME}"
-cp "target/release/${BINARY_NAME}" "${INSTALL_DIR}/${BINARY_NAME}"
+cp "${BINARY_PATH}" "${INSTALL_DIR}/${BINARY_NAME}"
 chmod +x "${INSTALL_DIR}/${BINARY_NAME}"
 
 # Check if install dir is in PATH
