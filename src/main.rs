@@ -5,6 +5,7 @@ mod add;
 mod checkout;
 mod list;
 mod master;
+mod merge;
 mod remove;
 mod utils;
 
@@ -41,6 +42,12 @@ enum Commands {
         /// Name of the worktree to remove, or '.' for current
         name: String,
     },
+    /// Merge the PR for the current worktree and clean up
+    Merge {
+        /// Merge strategy: squash, merge, or rebase (defaults to user/repo config)
+        #[arg(short, long)]
+        strategy: Option<String>,
+    },
 }
 
 fn main() -> Result<()> {
@@ -52,5 +59,6 @@ fn main() -> Result<()> {
         Some(Commands::Master) => master::execute(),
         Some(Commands::List) | None => list::execute(),
         Some(Commands::Remove { name }) => remove::execute(&name),
+        Some(Commands::Merge { strategy }) => merge::execute(strategy.as_deref()),
     }
 }
