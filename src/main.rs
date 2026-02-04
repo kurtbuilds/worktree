@@ -44,9 +44,11 @@ enum Commands {
     },
     /// Merge the PR for the current worktree and clean up
     Merge {
-        /// Merge strategy: squash, merge, or rebase (defaults to user/repo config)
-        #[arg(short, long)]
-        strategy: Option<String>,
+        /// Name of the worktree to merge (required if on main, optional if inside a worktree)
+        name: Option<String>,
+        /// Merge strategy: squash, merge, or rebase
+        #[arg(short, long, default_value = "squash")]
+        strategy: String,
     },
 }
 
@@ -59,6 +61,6 @@ fn main() -> Result<()> {
         Some(Commands::Master) => master::execute(),
         Some(Commands::List) | None => list::execute(),
         Some(Commands::Remove { name }) => remove::execute(&name),
-        Some(Commands::Merge { strategy }) => merge::execute(strategy.as_deref()),
+        Some(Commands::Merge { name, strategy }) => merge::execute(name.as_deref(), &strategy),
     }
 }
