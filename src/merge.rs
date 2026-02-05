@@ -2,6 +2,24 @@ use anyhow::{bail, Context, Result};
 use std::process::Command;
 use crate::utils;
 
+/// Get the branch name checked out in a worktree
+fn get_worktree_branch(worktree_path: &std::path::Path) -> Result<String> {
+    let output = Command::new("git")
+        .current_dir(worktree_path)
+        .args(["rev-parse", "--abbrev-ref", "HEAD"])
+        .output()
+        .context("Failed to get branch name")?;
+
+    if !output.status.success() {
+        bail!("Failed to determine branch name for worktree");
+    }
+
+    Ok(String::from_utf8(output.stdout)
+        .context("Invalid UTF-8 in branch name")?
+        .trim()
+        .to_string())
+}
+
 pub fn execute(name: Option<&str>, strategy: &str) -> Result<()> {
     let is_main = utils::is_main_worktree()?;
     let main_worktree_path = utils::get_main_worktree_path()?;
@@ -38,7 +56,11 @@ pub fn execute(name: Option<&str>, strategy: &str) -> Result<()> {
         bail!("Worktree not found: {}", worktree_path.display());
     }
 
-    eprintln!("Merging PR and cleaning up worktree: {}", worktree_path.display());
+    // Get the branch name before we do anything (need it for cleanup later)
+    let branch_name = get_worktree_branch(&worktree_path)?;
+
+    eprintln!("Merging and cleaning up worktree: {}", worktree_path.display());
+    eprintln!("Branch: {}", branch_name);
 
     // Build the strategy flag
     let strategy_flag = match strategy {
@@ -48,11 +70,12 @@ pub fn execute(name: Option<&str>, strategy: &str) -> Result<()> {
         _ => bail!("Invalid merge strategy: {}. Use 'squash', 'merge', or 'rebase'", strategy),
     };
 
-    // Merge the PR (run from the worktree directory so gh knows which PR)
-    eprintln!("Running: gh pr merge {} --delete-branch", strategy_flag);
+    // Step 1: Merge the PR (without --delete-branch to avoid the worktree conflict)
+    // We handle branch deletion ourselves after removing the worktree
+    eprintln!("Running: gh pr merge {}", strategy_flag);
     let output = Command::new("gh")
         .current_dir(&worktree_path)
-        .args(["pr", "merge", strategy_flag, "--delete-branch"])
+        .args(["pr", "merge", strategy_flag])
         .output()
         .context("Failed to execute gh pr merge. Is the GitHub CLI installed?")?;
 
@@ -62,20 +85,24 @@ pub fn execute(name: Option<&str>, strategy: &str) -> Result<()> {
         if !stdout.is_empty() {
             eprintln!("{}", stdout);
         }
-        bail!("Failed to merge PR: {}", stderr);
+        if stderr.contains("no pull requests found") {
+            eprintln!("No PR found for branch \"{}\", skipping merge. Cleaning up worktree and branch.", branch_name);
+        } else {
+            bail!("Failed to merge PR: {}", stderr);
+        }
+    } else {
+        // Print gh output
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        if !stdout.is_empty() {
+            eprintln!("{}", stdout);
+        }
+        if !stderr.is_empty() {
+            eprintln!("{}", stderr);
+        }
     }
 
-    // Print gh output
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    if !stdout.is_empty() {
-        eprintln!("{}", stdout);
-    }
-    if !stderr.is_empty() {
-        eprintln!("{}", stderr);
-    }
-
-    // Remove the worktree
+    // Step 2: Remove the worktree (this unlocks the branch for deletion)
     eprintln!("Removing worktree: {}", worktree_path.display());
     let output = Command::new("git")
         .current_dir(&main_worktree_path)
@@ -90,11 +117,49 @@ pub fn execute(name: Option<&str>, strategy: &str) -> Result<()> {
 
     eprintln!("Worktree removed successfully");
 
+    // Step 3: Delete the local branch (now possible since worktree is gone)
+    eprintln!("Deleting local branch: {}", branch_name);
+    let output = Command::new("git")
+        .current_dir(&main_worktree_path)
+        .args(["branch", "-D", &branch_name])
+        .output()
+        .context("Failed to execute git branch -D")?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        eprintln!("Warning: Failed to delete local branch: {}", stderr);
+        // Don't fail here - the branch might already be deleted or not exist
+    } else {
+        eprintln!("Local branch deleted");
+    }
+
+    // Step 4: Delete the remote branch (may already be deleted by GitHub's auto-delete setting)
+    eprintln!("Deleting remote branch: origin/{}", branch_name);
+    let output = Command::new("git")
+        .current_dir(&main_worktree_path)
+        .args(["push", "origin", "--delete", &branch_name])
+        .output()
+        .context("Failed to execute git push --delete")?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        // This is expected if GitHub already auto-deleted the branch
+        if stderr.contains("remote ref does not exist") {
+            eprintln!("Remote branch already deleted (likely by GitHub auto-delete)");
+        } else {
+            eprintln!("Warning: Failed to delete remote branch: {}", stderr);
+        }
+    } else {
+        eprintln!("Remote branch deleted");
+    }
+
     // If we were in the worktree being removed, cd to main
     if need_cd {
         eprintln!("Changing to main worktree: {}", main_worktree_path.display());
         utils::print_cd_command(&main_worktree_path);
     }
+
+    eprintln!("Merge complete!");
 
     Ok(())
 }
