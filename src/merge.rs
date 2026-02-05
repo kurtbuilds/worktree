@@ -20,6 +20,85 @@ fn get_worktree_branch(worktree_path: &std::path::Path) -> Result<String> {
         .to_string())
 }
 
+/// Get the branch name checked out in the main worktree
+fn get_main_branch_name(main_worktree_path: &std::path::Path) -> Result<String> {
+    let output = Command::new("git")
+        .current_dir(main_worktree_path)
+        .args(["rev-parse", "--abbrev-ref", "HEAD"])
+        .output()
+        .context("Failed to get main branch name")?;
+
+    if !output.status.success() {
+        bail!("Failed to determine main branch name");
+    }
+
+    Ok(String::from_utf8(output.stdout)
+        .context("Invalid UTF-8 in branch name")?
+        .trim()
+        .to_string())
+}
+
+/// Merge a branch into the main branch locally
+fn merge_locally(main_worktree_path: &std::path::Path, branch_name: &str, strategy: &str) -> Result<()> {
+    let main_branch = get_main_branch_name(main_worktree_path)?;
+    eprintln!("Merging {} into {} locally", branch_name, main_branch);
+
+    match strategy {
+        "squash" => {
+            let output = Command::new("git")
+                .current_dir(main_worktree_path)
+                .args(["merge", "--squash", branch_name])
+                .output()
+                .context("Failed to execute git merge --squash")?;
+
+            if !output.status.success() {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                bail!("Failed to squash merge: {}", stderr);
+            }
+
+            // Commit the squashed changes
+            let output = Command::new("git")
+                .current_dir(main_worktree_path)
+                .args(["commit", "-m", &format!("Squashed merge of branch '{}'", branch_name)])
+                .output()
+                .context("Failed to commit squash merge")?;
+
+            if !output.status.success() {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                bail!("Failed to commit squash merge: {}", stderr);
+            }
+        }
+        "merge" => {
+            let output = Command::new("git")
+                .current_dir(main_worktree_path)
+                .args(["merge", branch_name])
+                .output()
+                .context("Failed to execute git merge")?;
+
+            if !output.status.success() {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                bail!("Failed to merge: {}", stderr);
+            }
+        }
+        "rebase" => {
+            let output = Command::new("git")
+                .current_dir(main_worktree_path)
+                .args(["rebase", branch_name])
+                .output()
+                .context("Failed to execute git rebase")?;
+
+            if !output.status.success() {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                bail!("Failed to rebase: {}", stderr);
+            }
+        }
+        _ => bail!("Invalid merge strategy: {}", strategy),
+    }
+
+    eprintln!("Local merge successful");
+    Ok(())
+}
+
 pub fn execute(name: Option<&str>, strategy: &str) -> Result<()> {
     let is_main = utils::is_main_worktree()?;
     let main_worktree_path = utils::get_main_worktree_path()?;
@@ -70,8 +149,7 @@ pub fn execute(name: Option<&str>, strategy: &str) -> Result<()> {
         _ => bail!("Invalid merge strategy: {}. Use 'squash', 'merge', or 'rebase'", strategy),
     };
 
-    // Step 1: Merge the PR (without --delete-branch to avoid the worktree conflict)
-    // We handle branch deletion ourselves after removing the worktree
+    // Step 1: Try to merge via PR first, fall back to local merge if no PR exists
     eprintln!("Running: gh pr merge {}", strategy_flag);
     let output = Command::new("gh")
         .current_dir(&worktree_path)
@@ -86,7 +164,8 @@ pub fn execute(name: Option<&str>, strategy: &str) -> Result<()> {
             eprintln!("{}", stdout);
         }
         if stderr.contains("no pull requests found") {
-            eprintln!("No PR found for branch \"{}\", skipping merge. Cleaning up worktree and branch.", branch_name);
+            eprintln!("No PR found for branch \"{}\", merging locally.", branch_name);
+            merge_locally(&main_worktree_path, &branch_name, strategy)?;
         } else {
             bail!("Failed to merge PR: {}", stderr);
         }
