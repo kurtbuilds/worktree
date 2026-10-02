@@ -7,6 +7,7 @@ mod list;
 mod master;
 mod merge;
 mod remove;
+mod setup;
 mod utils;
 
 #[derive(Parser)]

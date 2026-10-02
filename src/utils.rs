@@ -10,8 +10,8 @@ pub fn get_root_dir() -> Result<PathBuf> {
     Ok(PathBuf::from(root))
 }
 
-/// Get the current git repository name
-pub fn get_repo_name() -> Result<String> {
+/// Get the top-level directory of the current worktree
+pub fn get_repo_root() -> Result<PathBuf> {
     let output = Command::new("git")
         .args(["rev-parse", "--show-toplevel"])
         .output()
@@ -26,7 +26,14 @@ pub fn get_repo_name() -> Result<String> {
         .trim()
         .to_string();
 
-    let repo_name = Path::new(&repo_path)
+    Ok(PathBuf::from(repo_path))
+}
+
+/// Get the current git repository name
+pub fn get_repo_name() -> Result<String> {
+    let repo_path = get_repo_root()?;
+
+    let repo_name = repo_path
         .file_name()
         .context("Could not determine repository name")?
         .to_str()
@@ -65,18 +72,6 @@ pub fn get_current_dir() -> Result<PathBuf> {
 /// Print a shell command that changes directory
 pub fn print_cd_command(path: &Path) {
     println!("cd \"{}\"", path.display());
-}
-
-/// Copy .env file from source to destination if it exists
-pub fn copy_env_file(src_dir: &Path, dest_dir: &Path) -> Result<()> {
-    let src_env = src_dir.join(".env");
-    if src_env.exists() {
-        let dest_env = dest_dir.join(".env");
-        std::fs::copy(&src_env, &dest_env)
-            .context("Failed to copy .env file")?;
-        eprintln!("Copied .env file to new worktree");
-    }
-    Ok(())
 }
 
 /// Get the path to the main worktree

@@ -92,6 +92,35 @@ export WORKTREE_ROOT_DIR="$HOME/worktrees"
 
 Add this to your shell configuration file (`.bashrc`, `.zshrc`, etc.) to make it permanent.
 
+### Per-repo setup
+
+When you run `wt add`, files that git doesn't track are copied from the repo
+root you ran it from into the new worktree. If the repo has no `.worktree-cli/setup.sh`,
+these are copied if they exist:
+
+- `.env`
+- `.cargo/config.toml`
+
+To configure more, create a `.worktree-cli/` directory in the repo root (you can commit it or leave it untracked):
+
+**`.worktree-cli/copy`**: extra paths to copy, one per line, relative to the repo root. Directories are copied recursively. Paths that don't exist are skipped.
+
+```
+# local config that isn't committed
+config/local.yml
+.vscode
+```
+
+**`.worktree-cli/setup.sh`**: replaces the default copies above, so copy anything you need yourself (or list it in `copy`). Runs after the copy step, with the new worktree as the working directory. `$WORKTREE_SOURCE` is the repo you ran `wt add` from, and `$WORKTREE_PATH` is the new worktree. If the script exits non-zero, `wt add` fails, but the worktree has already been created and isn't removed.
+
+```bash
+#!/bin/sh
+set -e
+cp "$WORKTREE_SOURCE/.env" .env
+ln -s "$WORKTREE_SOURCE/node_modules" node_modules
+npm run codegen
+```
+
 ## Usage
 
 ### Add a new worktree
@@ -108,7 +137,7 @@ wt init feature-branch
 
 This will:
 1. Create a worktree at `$WORKTREE_ROOT_DIR/{repo_name}/feature-branch`
-2. Copy the `.env` file from the current directory (if it exists)
+2. Copy untracked config files and run the repo's setup hook (see [Per-repo setup](#per-repo-setup))
 3. Change to the new worktree directory
 
 ### Go back to master

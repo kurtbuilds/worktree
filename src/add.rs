@@ -1,11 +1,11 @@
-use crate::utils;
+use crate::{setup, utils};
 use anyhow::{bail, Context, Result};
 use std::process::Command;
 
 pub fn execute(name: &str) -> Result<()> {
     let root_dir = utils::get_root_dir()?;
     let repo_name = utils::get_repo_name()?;
-    let current_dir = utils::get_current_dir()?;
+    let repo_root = utils::get_repo_root()?;
 
     // Construct the worktree path: {root_dir}/{repo_name}/{branch_name}
     let worktree_path = root_dir.join(&repo_name).join(name);
@@ -39,8 +39,8 @@ pub fn execute(name: &str) -> Result<()> {
 
     eprintln!("{}", String::from_utf8_lossy(&output.stderr));
 
-    // Copy .env file from current directory to the new worktree
-    utils::copy_env_file(&current_dir, &worktree_path)?;
+    // Copy untracked config files and run the repo's setup hook
+    setup::run(&repo_root, &worktree_path)?;
 
     // Print the cd command for the shell to execute
     utils::print_cd_command(&worktree_path);
